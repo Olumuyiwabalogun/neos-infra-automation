@@ -3,7 +3,7 @@ name: NEOS Secure Infrastructure & App Pipeline
 on:
   push:
     branches:
-      - main  # Triggers the pipeline automatically when you push to main
+      - main
 
 jobs:
   orchestrate:
@@ -28,25 +28,25 @@ jobs:
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # 4. Build your cache-optimized container layers and push to ECR
+    # 4. FIRST RUN TERRAFORM TARGET (Builds ECR repository, VPC, and networking layers first)
+    - name: Initialize and Create Base Infrastructure
+      run: |
+        cd understand
+        terraform init
+        terraform apply -target=aws_ecr_repository.app_repo -target=module.infaas -auto-approve
+
+    # 5. NOW BUILD AND PUSH CONTAINER IMAGE (The repository shelf now officially exists!)
     - name: Build and Push Lambda Container Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         REPOSITORY: neos-secure-lambda-registry
         IMAGE_TAG: latest
       run: |
-        # Build using the Dockerfile located inside the app directory
         docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG -f app/Dockerfile .
         docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-    # 5. Initialize Terraform inside the "understand" folder
-    - name: Initialize Terraform (Terraform Init)
-      run: |
-        cd understand
-        terraform init
-
-    # 6. Apply your infrastructure updates to wire up the network and compute
-    - name: Execute Cloud Deployment (Terraform Apply)
+    # 6. FINAL TERRAFORM APPLY (Deploys the Lambda and API Gateway tracking the new image)
+    - name: Complete Full Application Deployment
       run: |
         cd understand
         terraform apply -auto-approve
