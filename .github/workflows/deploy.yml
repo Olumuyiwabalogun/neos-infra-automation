@@ -11,11 +11,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. Pull code into the runner workspace
     - name: Checkout Source Code
       uses: actions/checkout@v4
 
-    # 2. Authenticate safely with your AWS account credentials
     - name: Authenticate with AWS
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -23,19 +21,22 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    # 3. Log into AWS ECR
     - name: Authenticate Docker with AWS ECR
       id: login-ecr
       uses: aws-actions/amazon-ecr-login@v2
 
-    # 4. FIRST RUN TERRAFORM TARGET (Builds ECR repository, VPC, and networking layers first)
+    - name: Setup HashiCorp Terraform CLI
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: "1.7.0"
+        terraform_wrapper: false
+
     - name: Initialize and Create Base Infrastructure
       run: |
         cd understand
         terraform init
         terraform apply -target=aws_ecr_repository.app_repo -target=module.infaas -auto-approve
 
-    # 5. NOW BUILD AND PUSH CONTAINER IMAGE (The repository shelf now officially exists!)
     - name: Build and Push Lambda Container Image
       env:
         REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -45,7 +46,6 @@ jobs:
         docker build -t $REGISTRY/$REPOSITORY:$IMAGE_TAG -f app/Dockerfile .
         docker push $REGISTRY/$REPOSITORY:$IMAGE_TAG
 
-    # 6. FINAL TERRAFORM APPLY (Deploys the Lambda and API Gateway tracking the new image)
     - name: Complete Full Application Deployment
       run: |
         cd understand
